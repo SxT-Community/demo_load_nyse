@@ -7,16 +7,11 @@ import yfinance, pandas, os, re
 sxt = SpaceAndTime(envfile_filepath='./.env/secrets.env')
 sxt.authenticate()
 
-# create definition for our table (strip out any non-alphanumeric characters from user_id)
-stocks = SXTTable(f"SXTDemo.Stocks_{re.sub(r'[^a-zA-Z0-9_]', '_', sxt.user.user_id)}",
-                    private_key = os.getenv('RESOURCE_PRIVATE_KEY'), 
-                    access_type = sxt.TABLE_ACCESS.PUBLIC_READ, 
-                    SpaceAndTime_parent=sxt)
-
-# create two permissions (biscuits), one Admin, and one just to Load
-if stocks.private_key is None: stocks.new_keypair()
-stocks.add_biscuit('Admin', sxt.GRANT.ALL)
-stocks.add_biscuit('Load', sxt.GRANT.INSERT)
+# create table object (appending your userid to the end of tablename):
+stocks = SXTTable(name = f"SXTDemo.Stocks_{re.sub(r'[^a-zA-Z0-9_]', '_', sxt.user.user_id)}",
+                  private_key = os.getenv('RESOURCE_PRIVATE_KEY'), 
+                  access_type = sxt.TABLE_ACCESS.PUBLIC_READ, 
+                  SpaceAndTime_parent=sxt)
 
 stocks.create_ddl = """
     CREATE TABLE {table_name} 
@@ -31,10 +26,18 @@ stocks.create_ddl = """
     ,PRIMARY KEY (Symbol,Stock_Date)
     ) {with}
 """
-if not stocks.exists: stocks.create()
+
+# create three permissions (biscuits), one Admin, one for Reading, and one just to Load
+stocks.add_biscuit('Admin', sxt.GRANT.ALL)
+stocks.add_biscuit('Load', sxt.GRANT.INSERT, sxt.GRANT.UPDATE,
+                           sxt.GRANT.DELETE, sxt.GRANT.SELECT)
+stocks.add_biscuit('Read', sxt.GRANT.SELECT)
+
+# save all table settings to file
 stocks.save(stocks.recommended_filename)
 
-
+# actually create, if missing:
+if not stocks.exists: stocks.create()
 
 # ----------------------------------------
 # ------- PULL AND LOAD DATA -------------
@@ -55,11 +58,6 @@ for symbol in ['AAPL', 'GOOGL', 'AMZN', 'MSFT', 'RIVN', 'NVDA',
     if data.empty or data is None:
         print(f"No new data detected for {symbol}")
     else: 
-
-        # delete any pre-existing data, before inserting:
-        stocks.delete(where = f""" 
-                    Symbol = '{symbol}' 
-                    AND Stock_Date between '{start_date}' AND '{end_date}' """)
         
         # transform pandas dataframe to list of dicts
         data = pandas.DataFrame(data).reset_index() # add date (from index)
@@ -68,6 +66,11 @@ for symbol in ['AAPL', 'GOOGL', 'AMZN', 'MSFT', 'RIVN', 'NVDA',
                         'Stock_Close', 'Stock_AdjClose', 'Stock_Volume'] # rename to table column names
         data['Stock_Date'] = data['Stock_Date'].dt.strftime('%Y-%m-%d') # convert date to string
         data_load = data.to_dict(orient='records') # convert to list of dicts
+
+        # delete any pre-existing data, before inserting:
+        stocks.delete(where = f""" 
+                    Symbol = '{symbol}' 
+                    AND Stock_Date between '{start_date}' AND '{end_date}' """)
 
         # insert into SXT
         # success, response = stocks.insert.with_list_of_dicts(data_load)
@@ -81,13 +84,11 @@ for symbol in ['AAPL', 'GOOGL', 'AMZN', 'MSFT', 'RIVN', 'NVDA',
 
     
 
-# generate quick aggregation:
+# Find the overall highest and lowest price for the time period
 success, data = stocks.select(f"""
     select distinct Symbol
-    , min( least(stock_open,stock_high, stock_low, stock_close, stock_adjClose)) 
-        over(partition by Symbol) as period_lowest_price
-    , max( greatest(stock_open,stock_high, stock_low, stock_close, stock_adjClose))
-        over(partition by Symbol) as period_highest_price
+    , min( stock_low  ) over(partition by Symbol) as period_lowest_price
+    , max( stock_high ) over(partition by Symbol) as period_highest_price
     from {stocks.table_name} 
     where Stock_Date between '{start_date}' and '{end_date}'
     order by Symbol  """)

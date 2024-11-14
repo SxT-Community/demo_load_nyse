@@ -8,7 +8,7 @@ mkdir ./.env
 touch ./.env/secrets.env
 
 touch ./.gitignore
-echo "secrets.env" >> ./.gitignore
+echo "secrets.env" > ./.gitignore
 echo "venv_demo/" >> ./.gitignore
 echo "tables/" >> ./.gitignore
 
@@ -19,3 +19,9 @@ source venv_demo/bin/activate
 pip3 install --upgrade pip
 pip3 install spaceandtime --upgrade
 pip3 install yfinance --upgrade
+
+# run the script and close the virtual environment
+. ./src/load_nyse.py
+deactivate
+
+echo "complete"
