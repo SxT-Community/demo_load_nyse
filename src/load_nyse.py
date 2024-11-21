@@ -2,7 +2,7 @@ from spaceandtime import SpaceAndTime, SXTTable
 from datetime import datetime, timedelta
 import yfinance, pandas, os, re
 
- 
+
 # connect to the network, and authenticate (must have an .env file)
 sxt = SpaceAndTime(envfile_filepath='./.env/secrets.env')
 sxt.authenticate()
@@ -33,10 +33,8 @@ stocks.add_biscuit('Load', sxt.GRANT.INSERT, sxt.GRANT.UPDATE,
                            sxt.GRANT.DELETE, sxt.GRANT.SELECT)
 stocks.add_biscuit('Read', sxt.GRANT.SELECT)
 
-# save all table settings to file
+# save all table settings to file, then create the table
 stocks.save(stocks.recommended_filename)
-
-# actually create, if missing:
 if not stocks.exists: stocks.create()
 
 # ----------------------------------------
@@ -73,10 +71,7 @@ for symbol in ['AAPL', 'GOOGL', 'AMZN', 'MSFT', 'RIVN', 'NVDA',
                     AND Stock_Date between '{start_date}' AND '{end_date}' """)
 
         # insert into SXT
-        # success, response = stocks.insert.with_list_of_dicts(data_load)
-        insert_head = f'INSERT INTO {stocks.table_name} ( {", ".join(list(data.columns))} ) VALUES \n ' 
-        insert_body = '\n,'.join(['('+', '.join([f"'{c}'" for c in list(r.values())])+')' for r in data_load])
-        success, response = stocks.insert.with_sqltext(insert_head + insert_body)
+        success, response = stocks.insert.list_of_dicts_batch(data_load)
         if success: 
             sxt.logger.info('SUCCESSFUL INSERT!')
         else:
